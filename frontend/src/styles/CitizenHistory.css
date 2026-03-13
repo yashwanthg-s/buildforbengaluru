@@ -212,6 +212,62 @@
   text-align: center;
 }
 
+/* Resolution Section */
+.resolution-section {
+  background: #e8f5e9;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #28a745;
+}
+
+.resolution-section h3 {
+  color: #1b5e20;
+}
+
+.resolution-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 20px 0;
+}
+
+.resolution-image-container {
+  text-align: center;
+}
+
+.resolution-image-container h4 {
+  color: #1b5e20;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.resolution-image {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 2px solid #28a745;
+}
+
+.resolution-notes {
+  background: white;
+  padding: 15px;
+  border-radius: 6px;
+  margin-top: 15px;
+  border-left: 4px solid #28a745;
+}
+
+.resolution-notes h4 {
+  color: #1b5e20;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.resolution-notes p {
+  color: #495057;
+  margin: 0;
+}
+
 .feedback-form {
   margin-top: 15px;
 }
@@ -274,5 +330,9 @@
 
   .complaints-list {
     max-height: 400px;
+  }
+
+  .resolution-images {
+    grid-template-columns: 1fr;
   }
 }

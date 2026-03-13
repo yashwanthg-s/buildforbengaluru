@@ -17,6 +17,7 @@ router.get('/', verifyToken, ComplaintController.getComplaints);
 router.get('/:id', verifyToken, ComplaintController.getComplaintById);
 router.patch('/:id/status', verifyToken, ComplaintController.updateComplaintStatus);
 router.post('/:id/feedback', verifyToken, ComplaintController.submitFeedback);
+router.post('/:id/resolve', verifyToken, ComplaintController.resolveComplaint);
 router.delete('/:id', verifyToken, ComplaintController.deleteComplaint);
 router.post('/validate-image', verifyToken, ComplaintController.validateImage);
 

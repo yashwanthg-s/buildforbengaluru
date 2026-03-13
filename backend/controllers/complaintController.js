@@ -1,8 +1,55 @@
 const Complaint = require('../models/Complaint');
 const axios = require('axios');
 const contentFilter = require('../utils/contentFilter');
+const fs = require('fs');
+const path = require('path');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+// Helper function to save resolution images from base64
+async function saveResolutionImage(base64Image, complaintId, type) {
+  try {
+    console.log(`\n  === SAVE RESOLUTION IMAGE (${type}) ===`);
+    console.log(`  Complaint ID: ${complaintId}`);
+    console.log(`  Image data length: ${base64Image?.length} bytes`);
+
+    // Remove data URL prefix if present
+    let imageData = base64Image;
+    if (base64Image.includes(',')) {
+      imageData = base64Image.split(',')[1];
+      console.log(`  ✓ Removed data URL prefix`);
+    }
+
+    // Decode base64 using Buffer (built-in Node.js)
+    const buffer = Buffer.from(imageData, 'base64');
+    console.log(`  ✓ Decoded base64 to buffer: ${buffer.length} bytes`);
+
+    // Create filename
+    const timestamp = Date.now();
+    const random = Math.round(Math.random() * 1E9);
+    const filename = `resolution-${complaintId}-${type}-${timestamp}-${random}.jpg`;
+    console.log(`  📄 Filename: ${filename}`);
+
+    // Save to uploads directory
+    const uploadsDir = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      console.log(`  📁 Created uploads directory`);
+    }
+
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, buffer);
+    console.log(`  ✓ File saved to: ${filepath}`);
+
+    // Return relative path for database storage
+    const relativePath = `/uploads/${filename}`;
+    console.log(`  ✓ Database path: ${relativePath}\n`);
+    return relativePath;
+  } catch (error) {
+    console.error(`  ❌ Error saving ${type} image:`, error.message);
+    throw error;
+  }
+}
 
 class ComplaintController {
   static async createComplaint(req, res) {
@@ -11,6 +58,7 @@ class ComplaintController {
       const userId = user_id || req.user?.id || 1; // Use provided user_id, or auth user, or default to 1
 
       console.log('Creating complaint for user ID:', userId);
+      console.log('Request body:', { title, description, category, priority, latitude, longitude, date, time, user_id });
 
       // Validate required fields
       if (!title || !description || !latitude || !longitude || !date || !time) {
@@ -73,6 +121,8 @@ class ComplaintController {
         priority: priority || 'medium'
       };
 
+      console.log('Complaint data before Gemini:', complaintData);
+
       let aiCategory = category || 'other';
       let aiPriority = priority || 'medium';
 
@@ -103,16 +153,22 @@ class ComplaintController {
         }
 
         if (geminiResponse) {
-          aiCategory = geminiResponse.category || category || 'other';
-          aiPriority = geminiResponse.priority || priority || 'medium';
+          // User-selected category takes precedence
+          aiCategory = category || geminiResponse.category || 'other';
+          aiPriority = priority || geminiResponse.priority || 'medium';
           complaintData.category = aiCategory;
           complaintData.priority = aiPriority;
           console.log('Gemini Analysis:', {
-            category: geminiResponse.category,
-            priority: geminiResponse.priority,
+            gemini_category: geminiResponse.category,
+            user_category: category,
+            final_category: aiCategory,
+            gemini_priority: geminiResponse.priority,
+            user_priority: priority,
+            final_priority: aiPriority,
             confidence: geminiResponse.confidence,
             is_blocked: geminiResponse.is_blocked
           });
+          console.log('Complaint data after Gemini:', complaintData);
         }
       } catch (aiError) {
         console.error('Image validation failed:', aiError.message);
@@ -227,13 +283,13 @@ class ComplaintController {
         user_id: req.query.user_id || req.user?.id
       };
 
-      // For officer dashboard, only show complaints that are under_review or resolved
-      // (i.e., assigned by admin)
+      // For officer dashboard, show complaints by category (status = submitted)
       const userRole = req.query.role || 'citizen';
       if (userRole === 'officer') {
-        // Officers only see assigned complaints
+        // Officers see new complaints in their category (status = submitted)
+        // They can also filter by status to see under_review or resolved
         if (!filters.status) {
-          filters.status = 'under_review,resolved';
+          filters.status = 'submitted';
         }
       }
 
@@ -459,6 +515,78 @@ class ComplaintController {
         category: 'other',
         priority: 'medium',
         confidence: 0.5
+      });
+    }
+  }
+
+  static async resolveComplaint(req, res) {
+    try {
+      const { id } = req.params;
+      const { officer_id, before_image, after_image, resolution_notes } = req.body;
+
+      console.log('\n=== RESOLVE COMPLAINT DEBUG ===');
+      console.log('Complaint ID:', id);
+      console.log('Officer ID:', officer_id);
+      console.log('Before image length:', before_image?.length);
+      console.log('After image length:', after_image?.length);
+      console.log('Resolution notes:', resolution_notes);
+
+      if (!officer_id || !before_image || !after_image) {
+        console.log('❌ Missing required fields');
+        return res.status(400).json({
+          success: false,
+          message: 'Officer ID and both before/after images are required'
+        });
+      }
+
+      // Check if complaint exists
+      console.log('🔍 Checking if complaint exists...');
+      const complaint = await Complaint.findById(id);
+      if (!complaint) {
+        console.log('❌ Complaint not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Complaint not found'
+        });
+      }
+      console.log('✓ Complaint found:', complaint.title);
+
+      // Save before image
+      console.log('💾 Saving before image...');
+      const beforeImagePath = await saveResolutionImage(before_image, id, 'before');
+      console.log('✓ Before image saved:', beforeImagePath);
+      
+      // Save after image
+      console.log('💾 Saving after image...');
+      const afterImagePath = await saveResolutionImage(after_image, id, 'after');
+      console.log('✓ After image saved:', afterImagePath);
+
+      // Add resolution record
+      console.log('📝 Adding resolution record to database...');
+      const resolutionId = await Complaint.addResolution(
+        id,
+        officer_id,
+        beforeImagePath,
+        afterImagePath,
+        resolution_notes || ''
+      );
+      console.log('✓ Resolution record created:', resolutionId);
+
+      console.log('✅ Complaint resolved successfully\n');
+
+      res.json({
+        success: true,
+        message: 'Complaint resolved successfully',
+        resolution_id: resolutionId,
+        before_image_path: beforeImagePath,
+        after_image_path: afterImagePath
+      });
+    } catch (error) {
+      console.error('❌ Resolve complaint error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to resolve complaint',
+        error: error.message
       });
     }
   }

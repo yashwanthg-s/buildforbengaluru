@@ -36,7 +36,15 @@ class Complaint {
   static async findById(id) {
     const connection = await pool.getConnection();
     try {
-      const query = 'SELECT * FROM complaints WHERE id = ?';
+      const query = `
+        SELECT c.*, 
+        cr.before_image_path,
+        cr.after_image_path,
+        cr.resolution_notes
+        FROM complaints c 
+        LEFT JOIN complaint_resolutions cr ON c.id = cr.complaint_id
+        WHERE c.id = ?
+      `;
       const [rows] = await connection.execute(query, [id]);
       return rows[0] || null;
     } finally {
@@ -49,8 +57,12 @@ class Complaint {
     try {
       let query = `
         SELECT c.*, 
-        EXISTS(SELECT 1 FROM complaint_feedback WHERE complaint_id = c.id) as has_feedback
+        EXISTS(SELECT 1 FROM complaint_feedback WHERE complaint_id = c.id) as has_feedback,
+        cr.before_image_path,
+        cr.after_image_path,
+        cr.resolution_notes
         FROM complaints c 
+        LEFT JOIN complaint_resolutions cr ON c.id = cr.complaint_id
         WHERE 1=1
       `;
       const params = [];
@@ -286,8 +298,21 @@ class Complaint {
     const connection = await pool.getConnection();
     try {
       const query = `
-        SELECT * FROM complaints 
-        ORDER BY created_at DESC
+        SELECT c.*, 
+        cr.before_image_path,
+        cr.after_image_path,
+        cr.resolution_notes,
+        COALESCE(cc.complaint_count, 1) as duplicate_count
+        FROM complaints c 
+        LEFT JOIN complaint_resolutions cr ON c.id = cr.complaint_id
+        LEFT JOIN complaint_clusters cc ON c.id = cc.primary_complaint_id
+        WHERE c.id NOT IN (
+          SELECT DISTINCT ccm.complaint_id 
+          FROM complaint_cluster_members ccm
+          INNER JOIN complaint_clusters cc2 ON ccm.cluster_id = cc2.id
+          WHERE ccm.complaint_id != cc2.primary_complaint_id
+        )
+        ORDER BY c.created_at DESC
         LIMIT 1000
       `;
       const [rows] = await connection.execute(query);
@@ -375,6 +400,69 @@ class Complaint {
       );
 
       return clusterId;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async addResolution(complaintId, officerId, beforeImagePath, afterImagePath, notes = '') {
+    const connection = await pool.getConnection();
+    try {
+      console.log('\n  === ADD RESOLUTION TO DATABASE ===');
+      console.log(`  Complaint ID: ${complaintId}`);
+      console.log(`  Officer ID: ${officerId}`);
+      console.log(`  Before image: ${beforeImagePath}`);
+      console.log(`  After image: ${afterImagePath}`);
+      console.log(`  Notes: ${notes.substring(0, 50)}...`);
+
+      // Insert resolution record
+      const query = `
+        INSERT INTO complaint_resolutions 
+        (complaint_id, officer_id, before_image_path, after_image_path, resolution_notes)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+      
+      console.log('  📝 Executing INSERT query...');
+      const [result] = await connection.execute(query, [
+        complaintId,
+        officerId,
+        beforeImagePath,
+        afterImagePath,
+        notes
+      ]);
+
+      const resolutionId = result.insertId;
+      console.log(`  ✓ Resolution record created with ID: ${resolutionId}`);
+
+      // Update complaint with resolution info
+      const updateQuery = `
+        UPDATE complaints 
+        SET status = 'resolved', resolution_id = ?, resolved_by = ?, resolved_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `;
+      
+      console.log('  📝 Executing UPDATE query...');
+      await connection.execute(updateQuery, [resolutionId, officerId, complaintId]);
+      console.log(`  ✓ Complaint updated with resolution info\n`);
+
+      return resolutionId;
+    } catch (error) {
+      console.error('  ❌ Database error:', error.message);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async getResolution(complaintId) {
+    const connection = await pool.getConnection();
+    try {
+      const query = `
+        SELECT * FROM complaint_resolutions 
+        WHERE complaint_id = ?
+      `;
+      const [rows] = await connection.execute(query, [complaintId]);
+      return rows[0] || null;
     } finally {
       connection.release();
     }

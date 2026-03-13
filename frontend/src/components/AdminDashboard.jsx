@@ -18,10 +18,10 @@ const AdminDashboard = () => {
   const [feedbacks, setFeedbacks] = useState([]);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [aiDetecting, setAiDetecting] = useState(false);
   const [showEmergencyOnly, setShowEmergencyOnly] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'emergency', 'submitted', 'assigned', etc.
-  const [activeTab, setActiveTab] = useState('complaints'); // 'complaints' or 'feedback'
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState('complaints');
+  const [complaintFeedback, setComplaintFeedback] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -58,26 +58,6 @@ const AdminDashboard = () => {
     setLoading(false);
   };
 
-  const handleDetectEmergency = async () => {
-    setAiDetecting(true);
-    try {
-      const emergencyData = await complaintService.getEmergencyComplaints();
-      // Backend now returns only top 2 unassigned complaints
-      setDisplayedComplaints(Array.isArray(emergencyData) ? emergencyData : []);
-      setShowEmergencyOnly(true);
-      setActiveFilter('emergency');
-      
-      // Show info about how many were analyzed
-      if (emergencyData.length > 0) {
-        console.log(`Showing top ${emergencyData.length} emergency complaints`);
-      }
-    } catch (error) {
-      console.error('Failed to detect emergency complaints:', error);
-      alert('Failed to detect emergency complaints');
-    }
-    setAiDetecting(false);
-  };
-
   const handleShowAllComplaints = () => {
     setDisplayedComplaints(allComplaints);
     setShowEmergencyOnly(false);
@@ -100,30 +80,31 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleAssignToOfficer = async (complaintId) => {
-    try {
-      // Pass admin_id (assuming admin user id is 3, or use actual logged-in admin id)
-      const adminId = 3; // Hardcoded admin ID
-      await complaintService.updateComplaintStatus(
-        complaintId, 
-        'under_review', 
-        'Assigned to officer for immediate action',
-        adminId
-      );
-      alert('Complaint assigned to officer dashboard');
-      fetchDashboardData();
-    } catch (error) {
-      console.error('Failed to assign complaint:', error);
-      alert('Failed to assign complaint');
-    }
-  };
-
   const handleViewLocation = (complaint) => {
     const mapsUrl = locationService.generateMapsUrl(
       complaint.latitude,
       complaint.longitude
     );
     window.open(mapsUrl, '_blank');
+  };
+
+  const handleSelectComplaint = async (complaint) => {
+    console.log('Selected complaint:', complaint);
+    console.log('Before image path:', complaint.before_image_path);
+    console.log('After image path:', complaint.after_image_path);
+    setSelectedComplaint(complaint);
+    // Fetch feedback for this complaint
+    try {
+      const allFeedback = feedbacks.find(f => f.complaint_id === complaint.id);
+      setComplaintFeedback(allFeedback || null);
+    } catch (error) {
+      console.error('Failed to fetch feedback:', error);
+    }
+  };
+
+  const handleCloseComplaintDetail = () => {
+    setSelectedComplaint(null);
+    setComplaintFeedback(null);
   };
 
   const getPriorityColor = (priority) => {
@@ -167,18 +148,6 @@ const AdminDashboard = () => {
           <div className="stat-content">
             <h3>Pending</h3>
             <p className="stat-number">{stats.submitted}</p>
-          </div>
-        </div>
-
-        <div 
-          className={`stat-card emergency ${activeFilter === 'emergency' ? 'active-card' : ''}`}
-          onClick={handleDetectEmergency}
-          style={{ cursor: 'pointer' }}
-        >
-          <div className="stat-icon">🚨</div>
-          <div className="stat-content">
-            <h3>Emergency</h3>
-            <p className="stat-number">{stats.emergency}</p>
           </div>
         </div>
 
@@ -238,30 +207,9 @@ const AdminDashboard = () => {
             <div className="section-header">
               <div className="header-left">
                 <h2>📋 Complaints Management</h2>
-                <p>
-                  {showEmergencyOnly 
-                    ? `🚨 Showing top ${displayedComplaints.length} most urgent emergency complaints (AI-detected)`
-                    : `Showing all ${displayedComplaints.length} complaints`
-                  }
-                </p>
+                <p>Showing all {displayedComplaints.length} complaints</p>
               </div>
               <div className="header-actions">
-                {!showEmergencyOnly ? (
-                  <button
-                    onClick={handleDetectEmergency}
-                    disabled={aiDetecting}
-                    className="btn btn-ai"
-                  >
-                    {aiDetecting ? '🤖 Analyzing...' : '🤖 Detect Emergency Using AI'}
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleShowAllComplaints}
-                    className="btn btn-secondary"
-                  >
-                    📋 Show All Complaints
-                  </button>
-                )}
               </div>
             </div>
 
@@ -274,7 +222,12 @@ const AdminDashboard = () => {
             ) : (
               <div className="emergency-grid">
                 {displayedComplaints.map(complaint => (
-                  <div key={complaint.id} className="emergency-card">
+                  <div 
+                    key={complaint.id} 
+                    className={`emergency-card ${selectedComplaint?.id === complaint.id ? 'selected' : ''}`}
+                    onClick={() => handleSelectComplaint(complaint)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <div className="emergency-header">
                       <span 
                         className="priority-badge"
@@ -286,6 +239,11 @@ const AdminDashboard = () => {
                       {complaint.urgency_score && (
                         <span className="urgency-score" title="AI Urgency Score">
                           🔥 {complaint.urgency_score.toFixed(0)}
+                        </span>
+                      )}
+                      {complaint.duplicate_count && complaint.duplicate_count > 1 && (
+                        <span className="duplicate-badge" title={`Reported by ${complaint.duplicate_count} citizens`}>
+                          👥 {complaint.duplicate_count} Reports
                         </span>
                       )}
                     </div>
@@ -341,17 +299,6 @@ const AdminDashboard = () => {
                       >
                         🗺️ View Location
                       </button>
-                      {complaint.status === 'submitted' && (
-                        <button
-                          onClick={() => handleAssignToOfficer(complaint.id)}
-                          className="btn btn-danger"
-                        >
-                          🚨 Assign to Officer
-                        </button>
-                      )}
-                      {complaint.status === 'under_review' && (
-                        <span className="status-badge">✓ Assigned</span>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -410,6 +357,131 @@ const AdminDashboard = () => {
           </div>
         )}
       </div>
+
+      {/* Complaint Detail Modal */}
+      {selectedComplaint && (
+        <div className="modal-overlay" onClick={handleCloseComplaintDetail}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Complaint Details - #{selectedComplaint.id}</h2>
+              <button className="close-btn" onClick={handleCloseComplaintDetail}>✕</button>
+            </div>
+
+            <div className="modal-body">
+              {/* Original Complaint Image */}
+              <div className="detail-section">
+                <h3>📸 Original Complaint Image</h3>
+                <img
+                  src={`http://localhost:5000${selectedComplaint.image_path}`}
+                  alt="Complaint"
+                  className="detail-image"
+                />
+              </div>
+
+              {/* Complaint Details */}
+              <div className="detail-section">
+                <h3>📋 Complaint Information</h3>
+                <div className="detail-grid">
+                  <div className="detail-item">
+                    <label>Title:</label>
+                    <p>{selectedComplaint.title}</p>
+                  </div>
+                  <div className="detail-item">
+                    <label>Description:</label>
+                    <p>{selectedComplaint.description}</p>
+                  </div>
+                  <div className="detail-item">
+                    <label>Category:</label>
+                    <p>{selectedComplaint.category}</p>
+                  </div>
+                  <div className="detail-item">
+                    <label>Priority:</label>
+                    <p style={{ color: getPriorityColor(selectedComplaint.priority) }}>
+                      {selectedComplaint.priority.toUpperCase()}
+                    </p>
+                  </div>
+                  <div className="detail-item">
+                    <label>Status:</label>
+                    <p>{selectedComplaint.status}</p>
+                  </div>
+                  <div className="detail-item">
+                    <label>Date & Time:</label>
+                    <p>{selectedComplaint.date} {selectedComplaint.time}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resolution Images - Only for resolved complaints */}
+              {selectedComplaint.status === 'resolved' && selectedComplaint.resolution_id && (
+                <div className="detail-section resolution-section">
+                  <h3>✅ Resolution Proof</h3>
+                  <p style={{ fontSize: '0.95rem', color: '#666', marginBottom: '15px' }}>
+                    Officer has provided before and after images showing the resolution
+                  </p>
+                  <div className="resolution-images">
+                    {selectedComplaint.before_image_path && (
+                      <div className="resolution-image-container">
+                        <h4>Before Work</h4>
+                        <img
+                          src={`http://localhost:5000${selectedComplaint.before_image_path}`}
+                          alt="Before resolution"
+                          className="resolution-image"
+                        />
+                      </div>
+                    )}
+                    {selectedComplaint.after_image_path && (
+                      <div className="resolution-image-container">
+                        <h4>After Work</h4>
+                        <img
+                          src={`http://localhost:5000${selectedComplaint.after_image_path}`}
+                          alt="After resolution"
+                          className="resolution-image"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {selectedComplaint.resolution_notes && (
+                    <div className="resolution-notes">
+                      <h4>Resolution Notes</h4>
+                      <p>{selectedComplaint.resolution_notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Citizen Feedback - Only for resolved complaints */}
+              {selectedComplaint.status === 'resolved' && complaintFeedback && (
+                <div className="detail-section feedback-section">
+                  <h3>⭐ Citizen Feedback</h3>
+                  <div className="feedback-display">
+                    <div className="feedback-rating">
+                      <span className="stars">{renderStarRating(complaintFeedback.rating)}</span>
+                      <span className="rating-text">{complaintFeedback.rating}/5 Stars</span>
+                    </div>
+                    {complaintFeedback.feedback_text && (
+                      <div className="feedback-comment">
+                        <p>"{complaintFeedback.feedback_text}"</p>
+                      </div>
+                    )}
+                    <div className="feedback-meta">
+                      <span>Submitted by: {complaintFeedback.user_name || 'Citizen'}</span>
+                      <span>Date: {new Date(complaintFeedback.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedComplaint.status === 'resolved' && !complaintFeedback && (
+                <div className="detail-section">
+                  <p style={{ color: '#999', fontStyle: 'italic' }}>
+                    No feedback received from citizen yet
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

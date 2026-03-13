@@ -292,3 +292,132 @@
 .btn-secondary:hover:not(:disabled) {
   background: #545b62;
 }
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #218838;
+}
+
+.file-input {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  border: 2px dashed #dee2e6;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.file-input:hover {
+  border-color: #007bff;
+  background: #f8f9fa;
+}
+
+.image-preview {
+  margin-top: 10px;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.image-preview img {
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.button-group .btn {
+  flex: 1;
+}
+
+.detail-section h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.resolution-step {
+  background: #f8f9fa;
+  border-left: 4px solid #007bff;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 6px;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.step-number {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.step-header h5 {
+  margin: 0;
+  color: #333;
+  font-size: 1rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.step-complete {
+  background: #28a745;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.step-description {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0 0 12px 0;
+  font-style: italic;
+}
+
+.progress-indicator {
+  display: flex;
+  gap: 15px;
+  margin: 20px 0;
+  padding: 15px;
+  background: #e8f4f8;
+  border-radius: 6px;
+}
+
+.progress-item {
+  flex: 1;
+  padding: 10px;
+  border-radius: 6px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.progress-item.pending {
+  background: #fff3cd;
+  color: #856404;
+  border: 2px solid #ffc107;
+}
+
+.progress-item.complete {
+  background: #d1e7dd;
+  color: #0f5132;
+  border: 2px solid #28a745;
+}

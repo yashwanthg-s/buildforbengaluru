@@ -20,4 +20,9 @@ router.get('/officer', verifyToken, NotificationController.getOfficerNotificatio
 router.patch('/officer/:id/read', verifyToken, NotificationController.markOfficerNotificationAsRead);
 router.post('/officer/mark-all-read', verifyToken, NotificationController.markAllOfficerNotificationsAsRead);
 
+// Category-based notification routes (new complaints in officer's categories)
+router.get('/officer/category/notifications', verifyToken, NotificationController.getCategoryBasedNotifications);
+router.patch('/officer/category/:complaintId/read', verifyToken, NotificationController.markCategoryNotificationAsRead);
+router.post('/officer/category/mark-all-read', verifyToken, NotificationController.markAllCategoryNotificationsAsRead);
+
 module.exports = router;

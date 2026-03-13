@@ -125,7 +125,7 @@ class AdminController {
           analyzedComplaints.push({
             ...complaint,
             ai_priority: aiResponse.data.priority,
-            ai_confidence: aiResponse.data.confidence || 0.85, // Use confidence from AI or default to 85%
+            ai_confidence: aiResponse.data.confidence || 0.85,
             ai_recommendation: aiResponse.data.recommendation,
             keywords: keywords,
             urgency_score: calculateUrgencyScore(complaint, aiResponse.data)
@@ -133,22 +133,56 @@ class AdminController {
         } catch (aiError) {
           console.warn('AI analysis failed for complaint', complaint.id);
           
-          // Fallback: extract keywords manually
           const keywords = extractKeywords(complaint.description);
           
           analyzedComplaints.push({
             ...complaint,
             ai_priority: complaint.priority,
-            ai_confidence: 0.75, // Default 75% confidence for fallback
+            ai_confidence: 0.75,
             keywords: keywords,
             urgency_score: calculateUrgencyScore(complaint, { priority: complaint.priority })
           });
         }
       }
 
-      // Sort by urgency score (highest first), then by priority, then by date
+      // Group duplicate complaints by cluster_hash
+      const complaintMap = new Map();
+      
+      for (const complaint of analyzedComplaints) {
+        if (complaint.cluster_hash) {
+          // This is a duplicate - group by cluster_hash
+          if (!complaintMap.has(complaint.cluster_hash)) {
+            complaintMap.set(complaint.cluster_hash, {
+              ...complaint,
+              duplicate_count: 1,
+              citizen_ids: [complaint.user_id],
+              all_complaint_ids: [complaint.id]
+            });
+          } else {
+            // Add to existing cluster
+            const existing = complaintMap.get(complaint.cluster_hash);
+            existing.duplicate_count += 1;
+            existing.citizen_ids.push(complaint.user_id);
+            existing.all_complaint_ids.push(complaint.id);
+            // Update urgency score to highest in cluster
+            existing.urgency_score = Math.max(existing.urgency_score, complaint.urgency_score);
+          }
+        } else {
+          // Unique complaint
+          complaintMap.set(complaint.id, {
+            ...complaint,
+            duplicate_count: 1,
+            citizen_ids: [complaint.user_id],
+            all_complaint_ids: [complaint.id]
+          });
+        }
+      }
+
+      // Convert map to array and sort
+      const groupedComplaints = Array.from(complaintMap.values());
+      
       const priorityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
-      analyzedComplaints.sort((a, b) => {
+      groupedComplaints.sort((a, b) => {
         // First by urgency score
         if (b.urgency_score !== a.urgency_score) {
           return b.urgency_score - a.urgency_score;
@@ -160,15 +194,16 @@ class AdminController {
         return new Date(b.created_at) - new Date(a.created_at);
       });
 
-      console.log(`✓ Analyzed ${analyzedComplaints.length} complaints, sorted by urgency`);
+      console.log(`✓ Analyzed ${analyzedComplaints.length} complaints, grouped into ${groupedComplaints.length} unique issues`);
 
       // Return only top 2 most urgent complaints
-      const top2Emergency = analyzedComplaints.slice(0, 2);
+      const top2Emergency = groupedComplaints.slice(0, 2);
 
       res.json({
         success: true,
         count: top2Emergency.length,
         total_analyzed: analyzedComplaints.length,
+        total_unique_issues: groupedComplaints.length,
         complaints: top2Emergency
       });
     } catch (error) {

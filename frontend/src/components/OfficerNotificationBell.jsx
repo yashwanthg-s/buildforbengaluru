@@ -14,7 +14,7 @@ export const OfficerNotificationBell = ({ officerId, onNotificationClick }) => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/notifications/officer?officer_id=${officerId}`, {
+      const response = await fetch(`${API_URL}/notifications/officer/category/notifications?officer_id=${officerId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -66,18 +66,19 @@ export const OfficerNotificationBell = ({ officerId, onNotificationClick }) => {
     }
   };
 
-  const handleMarkAsRead = async (notificationId) => {
+  const handleMarkAsRead = async (notificationId, complaintId) => {
     try {
-      await fetch(`${API_URL}/notifications/officer/${notificationId}/read`, {
+      await fetch(`${API_URL}/notifications/officer/category/${complaintId}/read`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ officer_id: officerId }),
       });
       
       // Update local state
       setNotifications(notifications.map(n => 
-        n.id === notificationId ? { ...n, is_read: true } : n
+        n.complaint_id === complaintId ? { ...n, is_read: true } : n
       ));
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
@@ -106,7 +107,7 @@ export const OfficerNotificationBell = ({ officerId, onNotificationClick }) => {
   const handleNotificationClick = (notification) => {
     // Mark as read
     if (!notification.is_read) {
-      handleMarkAsRead(notification.id);
+      handleMarkAsRead(notification.complaint_id, notification.complaint_id);
     }
     
     // Close dropdown
@@ -155,7 +156,7 @@ export const OfficerNotificationBell = ({ officerId, onNotificationClick }) => {
       {isOpen && (
         <div className="notification-dropdown">
           <div className="notification-header">
-            <h3>New Assignments</h3>
+            <h3>New Complaints</h3>
             {unreadCount > 0 && (
               <button className="mark-all-read-btn" onClick={handleMarkAllAsRead}>
                 Mark all read
@@ -168,35 +169,29 @@ export const OfficerNotificationBell = ({ officerId, onNotificationClick }) => {
               <div className="notification-loading">Loading...</div>
             ) : notifications.length === 0 ? (
               <div className="notification-empty">
-                <p>No assignments yet</p>
+                <p>No new complaints in your categories</p>
               </div>
             ) : (
               notifications.map((notification) => (
                 <div
-                  key={notification.id}
+                  key={notification.complaint_id}
                   className={`notification-item ${!notification.is_read ? 'unread' : ''}`}
                   onClick={() => handleNotificationClick(notification)}
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="notification-content">
                     <div className="notification-title">
-                      🚨 New Assignment: {notification.complaint_title}
+                      📋 {notification.complaint_title}
                     </div>
                     <div className="notification-message">
-                      Assigned by {notification.assigned_by_name}
+                      Submitted by {notification.citizen_name}
                     </div>
                     <div className="notification-meta">
-                      <span 
-                        className="notification-status"
-                        style={{ color: getPriorityColor(notification.priority) }}
-                      >
-                        {notification.priority} priority
-                      </span>
                       <span className="notification-category">
                         {notification.category}
                       </span>
                       <span className="notification-time">
-                        {formatTime(notification.assigned_at)}
+                        {formatTime(notification.created_at)}
                       </span>
                     </div>
                   </div>

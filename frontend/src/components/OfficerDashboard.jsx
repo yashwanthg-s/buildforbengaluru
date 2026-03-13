@@ -10,11 +10,15 @@ export const OfficerDashboard = ({ userId }) => {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     status: 'all',
-    category: 'all',
-    priority: 'all'
+    category: 'infrastructure'
   });
   const [updateMessage, setUpdateMessage] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
+  const [resolutionMode, setResolutionMode] = useState(false);
+  const [beforeImage, setBeforeImage] = useState(null);
+  const [afterImage, setAfterImage] = useState(null);
+  const [resolutionNotes, setResolutionNotes] = useState('');
+  const [submittingResolution, setSubmittingResolution] = useState(false);
 
   useEffect(() => {
     fetchComplaints();
@@ -23,10 +27,11 @@ export const OfficerDashboard = ({ userId }) => {
   const fetchComplaints = async () => {
     setLoading(true);
     try {
-      const filterParams = { role: 'officer' };
+      const filterParams = { 
+        role: 'officer',
+        category: filters.category
+      };
       if (filters.status !== 'all') filterParams.status = filters.status;
-      if (filters.category !== 'all') filterParams.category = filters.category;
-      if (filters.priority !== 'all') filterParams.priority = filters.priority;
 
       const data = await complaintService.getComplaints(filterParams);
       setComplaints(data);
@@ -89,6 +94,70 @@ export const OfficerDashboard = ({ userId }) => {
     }
   };
 
+  const handleResolveComplaint = async () => {
+    if (!selectedComplaint || !beforeImage || !afterImage) {
+      alert('Please upload both before and after images');
+      return;
+    }
+
+    setSubmittingResolution(true);
+    try {
+      // Convert images to base64 if they're File objects
+      const beforeBase64 = typeof beforeImage === 'string' 
+        ? beforeImage 
+        : await fileToBase64(beforeImage);
+      
+      const afterBase64 = typeof afterImage === 'string' 
+        ? afterImage 
+        : await fileToBase64(afterImage);
+
+      // Call resolve endpoint
+      const response = await fetch(`http://localhost:5000/api/complaints/${selectedComplaint.id}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          officer_id: userId,
+          before_image: beforeBase64,
+          after_image: afterBase64,
+          resolution_notes: resolutionNotes
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to resolve complaint');
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('Complaint resolved successfully!');
+        // Refresh complaints
+        await fetchComplaints();
+        setSelectedComplaint(null);
+        setResolutionMode(false);
+        setBeforeImage(null);
+        setAfterImage(null);
+        setResolutionNotes('');
+      }
+    } catch (error) {
+      console.error('Failed to resolve complaint:', error);
+      alert('Failed to resolve complaint: ' + error.message);
+    } finally {
+      setSubmittingResolution(false);
+    }
+  };
+
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleViewLocation = (complaint) => {
     const mapsUrl = locationService.generateMapsUrl(
       complaint.latitude,
@@ -139,28 +208,11 @@ export const OfficerDashboard = ({ userId }) => {
             value={filters.category}
             onChange={handleFilterChange}
           >
-            <option value="all">All</option>
             <option value="infrastructure">Infrastructure</option>
             <option value="sanitation">Sanitation</option>
             <option value="traffic">Traffic</option>
             <option value="safety">Safety</option>
             <option value="utilities">Utilities</option>
-          </select>
-        </div>
-
-        <div className="filter-group">
-          <label htmlFor="priority-filter">Priority:</label>
-          <select
-            id="priority-filter"
-            name="priority"
-            value={filters.priority}
-            onChange={handleFilterChange}
-          >
-            <option value="all">All</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="critical">Critical</option>
           </select>
         </div>
       </div>
@@ -186,9 +238,6 @@ export const OfficerDashboard = ({ userId }) => {
                     <div className="badges">
                       <span className={getStatusBadgeClass(complaint.status)}>
                         {complaint.status}
-                      </span>
-                      <span className={getPriorityBadgeClass(complaint.priority)}>
-                        {complaint.priority}
                       </span>
                     </div>
                   </div>
@@ -255,13 +304,10 @@ export const OfficerDashboard = ({ userId }) => {
               </p>
             </div>
 
-            {/* Category and Priority */}
+            {/* Category and Status */}
             <div className="detail-section">
               <p>
                 <strong>Category:</strong> {selectedComplaint.category}
-              </p>
-              <p>
-                <strong>Priority:</strong> {selectedComplaint.priority}
               </p>
               <p>
                 <strong>Status:</strong> {selectedComplaint.status}
@@ -271,38 +317,181 @@ export const OfficerDashboard = ({ userId }) => {
             {/* Update Status */}
             <div className="detail-section update-section">
               <h3>Update Status</h3>
-              <div className="form-group">
-                <label htmlFor="new-status">New Status:</label>
-                <select
-                  id="new-status"
-                  value={updateStatus}
-                  onChange={(e) => setUpdateStatus(e.target.value)}
-                >
-                  <option value="">Select status...</option>
-                  <option value="under_review">Under Review</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
+              
+              {!resolutionMode ? (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="new-status">New Status:</label>
+                    <select
+                      id="new-status"
+                      value={updateStatus}
+                      onChange={(e) => setUpdateStatus(e.target.value)}
+                    >
+                      <option value="">Select status...</option>
+                      <option value="under_review">Under Review</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
 
-              <div className="form-group">
-                <label htmlFor="update-message">Message:</label>
-                <textarea
-                  id="update-message"
-                  value={updateMessage}
-                  onChange={(e) => setUpdateMessage(e.target.value)}
-                  placeholder="Add a message for the citizen..."
-                  rows="3"
-                />
-              </div>
+                  <div className="form-group">
+                    <label htmlFor="update-message">Message:</label>
+                    <textarea
+                      id="update-message"
+                      value={updateMessage}
+                      onChange={(e) => setUpdateMessage(e.target.value)}
+                      placeholder="Add a message for the citizen..."
+                      rows="3"
+                    />
+                  </div>
 
-              <button
-                onClick={handleUpdateStatus}
-                disabled={!updateStatus}
-                className="btn btn-primary"
-              >
-                ✓ Update Status
-              </button>
+                  {updateStatus === 'resolved' ? (
+                    <button
+                      onClick={() => setResolutionMode(true)}
+                      className="btn btn-success"
+                    >
+                      📸 Upload Resolution Images
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleUpdateStatus}
+                      disabled={!updateStatus}
+                      className="btn btn-primary"
+                    >
+                      ✓ Update Status
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h4>📸 Work Progress Documentation</h4>
+                  <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '20px' }}>
+                    ⚠️ Upload images to document your work. Both images are required to mark as resolved.
+                  </p>
+
+                  {/* STEP 1: BEFORE WORK */}
+                  <div className="resolution-step">
+                    <div className="step-header">
+                      <span className="step-number">1️⃣</span>
+                      <h5>BEFORE WORK - Upload Issue Image</h5>
+                      {beforeImage && <span className="step-complete">✓ Complete</span>}
+                    </div>
+                    <p className="step-description">
+                      Take a photo showing the issue BEFORE you start working on it
+                    </p>
+                    <div className="form-group">
+                      <label htmlFor="before-image">📷 Upload Image (Before Work):</label>
+                      <input
+                        id="before-image"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setBeforeImage(e.target.files[0])}
+                        className="file-input"
+                      />
+                      {beforeImage && (
+                        <div className="image-preview">
+                          <img 
+                            src={URL.createObjectURL(beforeImage)} 
+                            alt="Before" 
+                            style={{ maxWidth: '250px', marginTop: '10px', borderRadius: '6px' }}
+                          />
+                          <p style={{ fontSize: '0.85rem', color: '#28a745', marginTop: '8px', fontWeight: '600' }}>
+                            ✓ Before image uploaded
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* STEP 2: AFTER WORK */}
+                  <div className="resolution-step">
+                    <div className="step-header">
+                      <span className="step-number">2️⃣</span>
+                      <h5>AFTER WORK - Upload Completed Image</h5>
+                      {afterImage && <span className="step-complete">✓ Complete</span>}
+                    </div>
+                    <p className="step-description">
+                      Take a photo showing the issue AFTER you have completed the work
+                    </p>
+                    <div className="form-group">
+                      <label htmlFor="after-image">📷 Upload Image (After Work):</label>
+                      <input
+                        id="after-image"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setAfterImage(e.target.files[0])}
+                        className="file-input"
+                      />
+                      {afterImage && (
+                        <div className="image-preview">
+                          <img 
+                            src={URL.createObjectURL(afterImage)} 
+                            alt="After" 
+                            style={{ maxWidth: '250px', marginTop: '10px', borderRadius: '6px' }}
+                          />
+                          <p style={{ fontSize: '0.85rem', color: '#28a745', marginTop: '8px', fontWeight: '600' }}>
+                            ✓ After image uploaded
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* STEP 3: NOTES */}
+                  <div className="resolution-step">
+                    <div className="step-header">
+                      <span className="step-number">3️⃣</span>
+                      <h5>WORK NOTES (Optional)</h5>
+                    </div>
+                    <p className="step-description">
+                      Describe what you did to resolve the issue
+                    </p>
+                    <div className="form-group">
+                      <label htmlFor="resolution-notes">📝 Work Description:</label>
+                      <textarea
+                        id="resolution-notes"
+                        value={resolutionNotes}
+                        onChange={(e) => setResolutionNotes(e.target.value)}
+                        placeholder="Example: Fixed pothole with asphalt, smoothed edges, cleaned area..."
+                        rows="3"
+                      />
+                    </div>
+                  </div>
+
+                  {/* PROGRESS INDICATOR */}
+                  <div className="progress-indicator">
+                    <div className={`progress-item ${beforeImage ? 'complete' : 'pending'}`}>
+                      <span>Before Image</span>
+                    </div>
+                    <div className={`progress-item ${afterImage ? 'complete' : 'pending'}`}>
+                      <span>After Image</span>
+                    </div>
+                  </div>
+
+                  {/* SUBMIT SECTION */}
+                  <div className="button-group">
+                    <button
+                      onClick={handleResolveComplaint}
+                      disabled={!beforeImage || !afterImage || submittingResolution}
+                      className="btn btn-success"
+                      title={!beforeImage || !afterImage ? 'Both before and after images are required' : ''}
+                    >
+                      {submittingResolution ? '⏳ Submitting...' : '✓ Submit Resolution'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setResolutionMode(false);
+                        setBeforeImage(null);
+                        setAfterImage(null);
+                        setResolutionNotes('');
+                      }}
+                      className="btn btn-secondary"
+                    >
+                      ✕ Cancel
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

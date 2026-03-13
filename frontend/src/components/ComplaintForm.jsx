@@ -8,7 +8,7 @@ export const ComplaintForm = ({ userId = 1 }) => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    category: 'other',
+    category: '',
     priority: 'medium'
   });
 
@@ -156,6 +156,9 @@ export const ComplaintForm = ({ userId = 1 }) => {
     if (!formData.description.trim()) {
       newErrors.description = 'Complaint description is required';
     }
+    if (!formData.category) {
+      newErrors.category = 'Category is required';
+    }
     if (!capturedPhoto) {
       newErrors.photo = 'Live photo capture is required';
     }
@@ -214,7 +217,7 @@ export const ComplaintForm = ({ userId = 1 }) => {
       setFormData({
         title: '',
         description: '',
-        category: 'other',
+        category: '',
         priority: 'medium'
       });
       setCapturedPhoto(null);
@@ -325,20 +328,23 @@ export const ComplaintForm = ({ userId = 1 }) => {
 
         {/* Category */}
         <div className="form-group">
-          <label htmlFor="category">Category</label>
+          <label htmlFor="category">Category *</label>
           <select
             id="category"
             name="category"
             value={formData.category}
             onChange={handleInputChange}
+            className={errors.category ? 'input-error' : ''}
           >
-            <option value="other">Other</option>
+            <option value="">-- Select Category --</option>
             <option value="infrastructure">Infrastructure</option>
             <option value="sanitation">Sanitation</option>
             <option value="traffic">Traffic</option>
             <option value="safety">Safety</option>
             <option value="utilities">Utilities</option>
+            <option value="other">Other</option>
           </select>
+          {errors.category && <span className="error-text">{errors.category}</span>}
           {validationResult && <small>Auto-detected: {validationResult.category}</small>}
         </div>
 

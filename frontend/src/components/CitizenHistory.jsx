@@ -165,6 +165,44 @@ const CitizenHistory = ({ userId = 1, selectedComplaintId = null, onComplaintVie
               />
             </div>
 
+            {/* Resolution Images - Only for resolved complaints */}
+            {selectedComplaint.status === 'resolved' && selectedComplaint.resolution_id && (
+              <div className="detail-section resolution-section">
+                <h3>✅ Resolution Proof</h3>
+                <p style={{ fontSize: '0.95rem', color: '#666', marginBottom: '15px' }}>
+                  Officer has provided before and after images showing the resolution
+                </p>
+                <div className="resolution-images">
+                  {selectedComplaint.before_image_path && (
+                    <div className="resolution-image-container">
+                      <h4>Before</h4>
+                      <img
+                        src={`http://localhost:5000${selectedComplaint.before_image_path}`}
+                        alt="Before resolution"
+                        className="resolution-image"
+                      />
+                    </div>
+                  )}
+                  {selectedComplaint.after_image_path && (
+                    <div className="resolution-image-container">
+                      <h4>After</h4>
+                      <img
+                        src={`http://localhost:5000${selectedComplaint.after_image_path}`}
+                        alt="After resolution"
+                        className="resolution-image"
+                      />
+                    </div>
+                  )}
+                </div>
+                {selectedComplaint.resolution_notes && (
+                  <div className="resolution-notes">
+                    <h4>Resolution Notes</h4>
+                    <p>{selectedComplaint.resolution_notes}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Details */}
             <div className="detail-section">
               <h3>Title</h3>
