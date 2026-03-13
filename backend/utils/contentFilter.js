@@ -28,20 +28,9 @@ class ContentFilter {
     
     // Chat/greeting words that indicate non-complaint content
     this.chatKeywords = [
-      'hello', 'hi', 'hey', 'hii', 'hiii', 'helo',
-      'how are you', 'how r u', 'how r you', 'how are u',
-      'good morning', 'good afternoon', 'good evening', 'good night',
-      'whats up', "what's up", 'wassup', 'sup',
-      'nice to meet', 'pleased to meet',
-      'thank you', 'thanks', 'thx', 'thanx',
-      'bye', 'goodbye', 'see you', 'see ya',
-      'lol', 'lmao', 'haha', 'hehe',
-      'chat', 'chatting', 'lets chat', "let's chat",
-      'talk to me', 'can we talk', 'wanna talk',
-      'friend', 'friendship', 'be friends',
-      'love you', 'i love', 'luv u',
-      'miss you', 'i miss',
-      'call me', 'text me', 'message me', 'dm me',
+      'hi', 'hello', 'hey', 'hii', 'hiii',
+      'good morning', 'good afternoon', 'good evening',
+      'hi there', 'hello there', 'greetings',
       'whatsapp', 'instagram', 'facebook', 'snapchat', 'tiktok'
     ];
     
@@ -54,11 +43,9 @@ class ContentFilter {
     ];
     
     // Question patterns that indicate chat attempts
+    // REMOVED: Most patterns to allow casual language in complaints
     this.chatPatterns = [
-      /^(hi|hello|hey|hii|hiii)\s*[!.?]*$/i,  // Just "hi" or "hello"
-      /^(how are you|how r u|how r you)\s*[!.?]*$/i,  // Just "how are you"
       /\b(are you there|r u there|anyone there)\b/i,
-      /\b(can you hear me|do you understand)\b/i,
       /\b(who are you|what are you|who is this)\b/i,
     ];
   }
@@ -72,29 +59,15 @@ class ContentFilter {
   checkContent(title, description) {
     const fullText = `${title} ${description}`.toLowerCase();
     
-    // Check for chat/greeting keywords
-    for (const keyword of this.chatKeywords) {
-      if (fullText.includes(keyword.toLowerCase())) {
-        return {
-          isBlocked: true,
-          reason: `This appears to be a chat message, not a complaint. Please submit only legitimate civic issues like infrastructure problems, sanitation issues, or public service concerns.`,
-          keyword: keyword
-        };
-      }
+    // Check for too short content (likely spam)
+    if (title.trim().length < 3 || description.trim().length < 5) {
+      return {
+        isBlocked: true,
+        reason: 'Please provide more details. Title must be at least 3 characters and description at least 5 characters.'
+      };
     }
     
-    // Check for chat patterns
-    for (const pattern of this.chatPatterns) {
-      if (pattern.test(fullText)) {
-        return {
-          isBlocked: true,
-          reason: `This appears to be a chat message, not a complaint. Please submit only legitimate civic issues like infrastructure problems, sanitation issues, or public service concerns.`,
-          pattern: pattern.toString()
-        };
-      }
-    }
-    
-    // Check for blocked keywords
+    // Check for blocked keywords (violence, hate speech, etc.)
     for (const keyword of this.blockedKeywords) {
       if (fullText.includes(keyword.toLowerCase())) {
         return {
@@ -116,11 +89,17 @@ class ContentFilter {
       }
     }
     
-    // Check for too short content (likely spam)
-    if (title.trim().length < 5 || description.trim().length < 10) {
+    // Only block chat if it's ONLY chat (no civic content)
+    // Check if it's a pure chat message (just greetings, no real content)
+    const hasChatKeywords = this.chatKeywords.some(kw => fullText.includes(kw.toLowerCase()));
+    const hasChatPattern = this.chatPatterns.some(pattern => pattern.test(fullText));
+    
+    // If it's ONLY chat (no other meaningful content), block it
+    if ((hasChatKeywords || hasChatPattern) && fullText.length < 50) {
+      // Very short and only chat keywords = likely spam
       return {
         isBlocked: true,
-        reason: 'Please provide more details. Title must be at least 5 characters and description at least 10 characters.'
+        reason: `This appears to be a chat message, not a complaint. Please submit only legitimate civic issues like infrastructure problems, sanitation issues, or public service concerns.`
       };
     }
     

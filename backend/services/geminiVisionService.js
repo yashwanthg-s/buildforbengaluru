@@ -137,6 +137,13 @@ class GeminiVisionService {
         
         const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
         
+        // Validate base64 data
+        if (!base64Data || base64Data.length === 0) {
+          throw new Error('Invalid base64 image data');
+        }
+        
+        console.log('Base64 image size:', base64Data.length, 'bytes');
+        
         // Call Gemini Vision API directly
         const geminiResponse = await axios.post(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`,
@@ -147,25 +154,38 @@ class GeminiVisionService {
                   {
                     text: `You are analyzing an image for a civic complaint system.
 
-TASK: Determine if this image is PRIMARILY a human selfie/portrait, or if it's a civic issue photo.
+YOUR TASK: Detect if a HUMAN FACE is visible in the image.
 
-IMPORTANT RULES:
-1. SELFIE/PORTRAIT = Face/person fills most of the frame, person is the main subject
-2. CIVIC ISSUE = Infrastructure, road, pothole, water, garbage, accident, fire, etc.
-3. If there are people INCIDENTALLY visible in a civic issue photo, it's still a CIVIC ISSUE
+INSTRUCTIONS:
+1. Look for human faces in the image
+2. If ANY human face is visible (even partially, even in background) → BLOCK
+3. If NO human face is visible → ACCEPT
+
+DO NOT:
+- Compare RGB values or color patterns
+- Look for skin tones
+- Analyze clothing or body parts
+- Make assumptions based on colors
+
+DO:
+- Detect actual human FACES (eyes, nose, mouth, facial features)
+- Look for face shapes and facial structures
+- Identify faces even if partially visible or in background
+- Block if ANY face is detected
 
 Examples:
-- Selfie with face filling frame → SELFIE (block)
-- Group photo of people → SELFIE (block)
-- Pothole with water, road damage, etc. → CIVIC ISSUE (accept, even if people visible)
-- Accident scene → CIVIC ISSUE (accept, even if people visible)
-- Garbage/litter → CIVIC ISSUE (accept, even if people visible)
+- Accident scene with person's face visible → BLOCK (face detected)
+- Pothole with no faces visible → ACCEPT (no face)
+- Garbage pile with person's face visible → BLOCK (face detected)
+- Road damage with no faces → ACCEPT (no face)
+- Selfie → BLOCK (face is main subject)
+- Landscape with no people → ACCEPT (no face)
 
-Respond ONLY with JSON (no other text):
+Respond ONLY with valid JSON (no markdown, no extra text):
 {
-  "is_selfie_or_portrait": true/false,
-  "is_civic_issue": true/false,
-  "confidence": 0.0-1.0,
+  "human_face_detected": true/false,
+  "face_count": 0-10,
+  "confidence_score": 0-100,
   "reason": "brief reason"
 }`
                   },
@@ -194,85 +214,80 @@ Respond ONLY with JSON (no other text):
         if (jsonMatch) {
           const result = JSON.parse(jsonMatch[0]);
           
-          // Only block if it's a selfie/portrait (primary purpose is human)
-          // AND confidence is high (>0.7)
-          // Allow if it's a civic issue even if humans are incidentally visible
-          if (result.is_selfie_or_portrait && result.confidence > 0.7) {
-            console.error('❌ HUMAN SELFIE/PORTRAIT DETECTED - BLOCKING COMPLAINT');
-            console.error('Confidence:', result.confidence);
+          // BLOCK if human face is detected
+          if (result.human_face_detected) {
+            console.error('❌ HUMAN FACE DETECTED - BLOCKING COMPLAINT');
+            console.error('Face count:', result.face_count);
+            console.error('Confidence:', result.confidence_score);
             console.error('Reason:', result.reason);
             return {
               category: 'blocked',
               priority: 'blocked',
-              confidence: 0.0,
+              confidence: 0,
               is_blocked: true,
               block_reason: 'Image contains human. Please upload an image of the issue/location, not people.',
-              detection_method: 'gemini_vision'
-            };
-          }
-          
-          // If it's a civic issue, ALWAYS accept (even if humans visible)
-          if (result.is_civic_issue) {
-            console.log('✓ Civic issue detected, accepting image');
-            console.log('Reason:', result.reason);
-            return {
-              category: 'other',
-              priority: 'medium',
-              confidence: 0.5,
-              is_blocked: false,
               detection_method: 'gemini_vision',
-              civic_issue: true
+              face_count: result.face_count
             };
           }
           
-          // If confidence is low, accept (don't block uncertain cases)
-          if (result.confidence < 0.6) {
-            console.log('✓ Low confidence detection, accepting image');
-            return {
-              category: 'other',
-              priority: 'medium',
-              confidence: 0.5,
-              is_blocked: false,
-              detection_method: 'gemini_vision'
-            };
-          }
-          
-          // Default: accept
-          console.log('✓ Image accepted');
+          // No face detected - ACCEPT
+          console.log('✓ No human face detected, accepting image');
+          console.log('Reason:', result.reason);
           return {
             category: 'other',
             priority: 'medium',
-            confidence: 0.5,
+            confidence: result.confidence_score,
             is_blocked: false,
-            detection_method: 'gemini_vision'
+            detection_method: 'gemini_vision',
+            face_count: result.face_count
           };
         }
       } catch (geminiError) {
         console.error('Gemini Vision API error:', geminiError.message);
-        // Fall through to allow submission if Gemini fails
+        if (geminiError.response) {
+          console.error('Gemini error status:', geminiError.response.status);
+          console.error('Gemini error data:', JSON.stringify(geminiError.response.data));
+        }
+        // Fallback: Try AI service for face detection
+        console.warn('⚠️ Gemini API failed, trying AI service fallback...');
+        try {
+          const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8001';
+          const aiResponse = await axios.post(`${aiServiceUrl}/detect-human`, 
+            { image: base64Image },
+            { timeout: 5000 }
+          );
+          
+          if (aiResponse.data && aiResponse.data.contains_human) {
+            console.error('❌ HUMAN DETECTED BY AI SERVICE - BLOCKING');
+            return {
+              category: 'blocked',
+              priority: 'blocked',
+              confidence: 0,
+              is_blocked: true,
+              block_reason: 'Image contains human. Please upload an image of the issue/location, not people.',
+              detection_method: 'ai_service_fallback'
+            };
+          }
+          
+          // No human detected by AI service
+          return {
+            category: 'other',
+            priority: 'medium',
+            confidence: 50,
+            is_blocked: false,
+            detection_method: 'ai_service_fallback'
+          };
+        } catch (aiError) {
+          console.error('AI service fallback also failed:', aiError.message);
+          // Re-throw original Gemini error
+          throw geminiError;
+        }
       }
-      
-      // Fallback: Allow submission if Gemini fails
-      console.warn('⚠️ Gemini detection failed, allowing submission');
-      return {
-        category: 'other',
-        priority: 'medium',
-        confidence: 0.5,
-        is_blocked: false,
-        fallback: true,
-        message: 'Image validation skipped (service unavailable)'
-      };
     } catch (error) {
       console.error('Gemini analysis error:', error.message);
-      // Allow submission if there's an error (don't block)
-      return {
-        category: 'other',
-        priority: 'medium',
-        confidence: 0.5,
-        is_blocked: false,
-        fallback: true,
-        error: error.message
-      };
+      // Re-throw error
+      throw error;
     }
   }
 

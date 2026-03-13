@@ -20,17 +20,25 @@ class ComplaintController {
         });
       }
 
-      // Check content for inappropriate material
+      // Check content for inappropriate material (but allow civic issues without keywords)
       const contentCheck = contentFilter.checkContent(title, description);
       if (contentCheck.isBlocked) {
-        // Log the blocked attempt
-        contentFilter.logBlockedAttempt(userId, title, description, contentCheck.reason);
+        // Only block if it's actually inappropriate (spam, abuse, etc.)
+        // Don't block just because it lacks civic keywords
+        console.warn('Content check result:', contentCheck);
         
-        return res.status(400).json({
-          success: false,
-          message: contentCheck.reason,
-          blocked: true
-        });
+        // If it's just missing keywords, allow it - let the image validation decide
+        if (contentCheck.reason && contentCheck.reason.includes('keyword')) {
+          console.log('Missing civic keywords but allowing - image will be validated');
+        } else {
+          // Block only for actual inappropriate content
+          contentFilter.logBlockedAttempt(userId, title, description, contentCheck.reason);
+          return res.status(400).json({
+            success: false,
+            message: contentCheck.reason,
+            blocked: true
+          });
+        }
       }
 
       if (!req.file) {
@@ -107,22 +115,9 @@ class ComplaintController {
           });
         }
       } catch (aiError) {
-        console.warn('Gemini analysis failed, using text-only fallback:', aiError.message);
-        
-        // Fallback to text-only analysis
-        try {
-          const textResponse = await axios.post(`${AI_SERVICE_URL}/categorize`, {
-            title,
-            description
-          }, { timeout: 5000 });
-
-          if (textResponse.data.category) {
-            aiCategory = textResponse.data.category;
-            complaintData.category = aiCategory;
-          }
-        } catch (textError) {
-          console.warn('Text categorization also failed, using default');
-        }
+        console.error('Image validation failed:', aiError.message);
+        // Allow submission if validation fails - don't block users
+        console.warn('⚠️ Image validation failed, allowing submission to proceed');
       }
 
       // Check for duplicate complaints

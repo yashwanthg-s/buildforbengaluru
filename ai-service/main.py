@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -22,6 +22,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request models
+class ImageRequest(BaseModel):
+    image: str  # base64 encoded image
 
 # Initialize analyzers
 categorizer = ComplaintCategorizer()
@@ -364,25 +368,27 @@ async def batch_analyze(complaints: List[EmergencyAnalysisRequest]):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/detect-human")
-async def detect_human(image: UploadFile = File(...)):
+@app.post("/detect-human")
+async def detect_human(request: ImageRequest):
     """
-    Detect if image contains human using face detection and skin tone analysis
+    Detect if image contains human using face detection
+    
+    Request body: {"image": "base64_string"}
     
     Returns:
     {
         "contains_human": true/false,
         "confidence": 0.0-1.0,
-        "method": "face_detection/eye_detection/skin_tone_detection/all_methods",
+        "method": "face_detection/eye_detection/...",
         "details": "description of detection"
     }
     """
     try:
-        # Read image
-        image_bytes = await image.read()
+        if not request.image:
+            raise HTTPException(status_code=400, detail="No image provided")
         
-        # Detect human
-        result = human_detector.detect_human(image_bytes)
-        
+        # Detect human from base64
+        result = human_detector.detect_from_base64(request.image)
         return result
         
     except Exception as e:
